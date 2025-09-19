@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Sand Classification - Visualization</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+      text-align: center;
+    }
+    h1 {
+      margin-bottom: 10px;
+    }
+    #chart-container {
+      max-width: 700px;
+      margin: auto;
+    }
+    #area-table {
+      margin: 20px auto;
+      border-collapse: collapse;
+      width: 60%;
+    }
+    #area-table th, #area-table td {
+      border: 1px solid #ccc;
+      padding: 8px;
+      text-align: center;
+    }
+    #area-table th {
+      background-color: #f5f5f5;
+    }
+    button {
+      margin-bottom: 15px;
+      padding: 6px 12px;
+      border: none;
+      border-radius: 4px;
+      background: #007BFF;
+      color: white;
+      cursor: pointer;
+    }
+    button:hover {
+      background: #0056b3;
+    }
+  </style>
+</head>
+<body>
+<h1>Sand Type Area Visualization</h1>
+<div id="chart-container">
+  <button onclick="toggleChart()">Switch Chart Type</button>
+  <canvas id="sandChart"></canvas>
+</div>
+
+<h2>Area Covered (m²)</h2>
+<table id="area-table">
+  <thead>
+  <tr>
+    <th>Sand Type</th>
+    <th>Area (m²)</th>
+  </tr>
+  </thead>
+  <tbody>
+  <tr><td>Coarse (Dune region)</td><td id="coarseArea">0</td></tr>
+  <tr><td>Medium (Dune region)</td><td id="mediumArea">0</td></tr>
+  <tr><td>Fine (Intertidal zone)</td><td id="fineArea">0</td></tr>
+  </tbody>
+</table>
+
+<!-- Firebase App (v8) -->
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+
+<script>
+  // =========================
+  // 1️⃣ Firebase Config
+  // =========================
+  const firebaseConfig = {
+    apiKey: "AIzaSyD3CDUhwefTm_ET4g3_JcWRS_2vGaxCsg4",
+    authDomain: "sand-classifier.firebaseapp.com",
+    projectId: "sand-classifier",
+    storageBucket: "sand-classifier.firebasestorage.app",
+    messagingSenderId: "824935959428",
+    appId: "1:824935959428:web:6c7f47f58fecc8793cebd1",
+    measurementId: "G-0Q8ZG0H9EX"
+  };
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.firestore();
+
+  // =========================
+  // 2️⃣ Sand Regions Setup
+  // =========================
+  const sandRegions = { coarse: [], medium: [], fine: [] };
+  const sandColors = { coarse: "red", medium: "blue", fine: "green" };
+  const BASE_RADIUS = 20;   // meters
+  const OFFSET_RADIUS = 10; // meters
+
+  let lastSandType = null;
+
+  function mergeRegion(sandType, newPoint) {
+    let regions = sandRegions[sandType];
+    if (lastSandType === sandType && regions.length > 0) {
+      extendRegion(regions[regions.length - 1], newPoint);
+    } else {
+      let nearest = findNearestRegion(regions, newPoint);
+      if (nearest) {
+        extendRegion(nearest, newPoint);
+      } else {
+        regions.push({
+          latSum: newPoint.lat,
+          lngSum: newPoint.lng,
+          count: 1
+        });
+      }
+    }
+    lastSandType = sandType;
+  }
+
+  function extendRegion(region, point) {
+    region.latSum += point.lat;
+    region.lngSum += point.lng;
+    region.count++;
+  }
+
+  function findNearestRegion(regions, point) {
+    if (regions.length === 0) return null;
+    let nearest = null, minDist = Infinity;
+    for (let region of regions.slice(-2)) {
+      let center = [region.latSum / region.count, region.lngSum / region.count];
+      let dist = Math.sqrt(
+        Math.pow(center[0] - point.lat, 2) +
+        Math.pow(center[1] - point.lng, 2)
+      );
+      if (dist < minDist) {
+        minDist = dist;
+        nearest = region;
+      }
+    }
+    return nearest;
+  }
+
+  // =========================
+  // 3️⃣ Compute Areas
+  // =========================
+  function computeArea(radius) {
+    return Math.PI * Math.pow(radius, 2); // m²
+  }
+
+  function calculateSandAreas() {
+    const sandAreas = { coarse: 0, medium: 0, fine: 0 };
+    for (let sandType in sandRegions) {
+      sandRegions[sandType].forEach(region => {
+        let radius = BASE_RADIUS + OFFSET_RADIUS * (region.count - 1);
+        sandAreas[sandType] += computeArea(radius);
+      });
+    }
+    return sandAreas;
+  }
+
+  // =========================
+  // 4️⃣ Chart Rendering
+  // =========================
+  let chartInstance;
+  let currentType = "bar";
+
+  function renderChart(type) {
+    const sandAreas = calculateSandAreas();
+    const ctx = document.getElementById("sandChart").getContext("2d");
+
+    // update table
+    document.getElementById("coarseArea").innerText = sandAreas.coarse.toFixed(2);
+    document.getElementById("mediumArea").innerText = sandAreas.medium.toFixed(2);
+    document.getElementById("fineArea").innerText = sandAreas.fine.toFixed(2);
+
+    if (chartInstance) chartInstance.destroy();
+
+    chartInstance = new Chart(ctx, {
+      type: type,
+      data: {
+        labels: [
+          "Coarse (Dune region)",
+          "Medium (Dune region)",
+          "Fine (Intertidal zone)"
+        ],
+        datasets: [{
+          label: "Area Covered (m²)",
+          data: [sandAreas.coarse, sandAreas.medium, sandAreas.fine],
+          backgroundColor: ["red", "blue", "green"]
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: {
+          legend: { display: type === "pie" },
+          tooltip: {
+            callbacks: {
+              label: (tooltipItem) => tooltipItem.formattedValue + " m²"
+            }
+          }
+        },
+        scales: type === "bar" ? {
+          y: {
+            beginAtZero: true,
+            title: { display: true, text: "Area (m²)" }
+          }
+        } : {}
+      }
+    });
+  }
+
+  function toggleChart() {
+    currentType = currentType === "bar" ? "pie" : "bar";
+    renderChart(currentType);
+  }
+
+  // =========================
+  // 5️⃣ Firestore Listener
+  // =========================
+  db.collection("rover_data").onSnapshot(snapshot => {
+    snapshot.docChanges().forEach(change => {
+      if (change.type === "added") {
+        const data = change.doc.data();
+        let point = {
+          lat: data.lat,
+          lng: data.lng,
+          image_url: data.image_url,
+          sand_type: data.sand
+        };
+        mergeRegion(point.sand_type, point);
+      }
+    });
+    renderChart(currentType);
+  });
+</script>
+</body>
+</html>

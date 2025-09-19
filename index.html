@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Rover Sand Classification</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+
+    <style>
+        body, html {
+          margin: 0;
+          padding: 0;
+          height: 100%;
+        }
+        #map {
+          height: 100%;
+          width: 100%;
+        }
+        .info-window img {
+          width: 150px;
+          border-radius: 5px;
+        }
+        .slideshow-container {
+          position: relative;
+          text-align: center;
+        }
+        .prev, .next {
+          cursor: pointer;
+          position: absolute;
+          top: 50%;
+          width: auto;
+          padding: 2px 5px;
+          color: black;
+          font-weight: bold;
+          font-size: 16px;
+          background-color: rgba(255,255,255,0.7);
+          border-radius: 3px;
+          user-select: none;
+        }
+        .prev { left: 0; transform: translateY(-50%); }
+        .next { right: 0; transform: translateY(-50%); }
+        .slide img { border-radius: 5px; margin-top: 5px; }
+        .counter { margin-top: 5px; font-size: 14px; color: #333; }
+
+        /* 🌟 Floating Legend */
+#legend {
+  position: absolute;
+  top: 60px; /* push down below navbar */
+  right: 10px;
+  max-width: 250px;   /* ✅ prevent it from stretching */
+  background: white;
+  padding: 10px 15px;
+  border-radius: 8px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+  font-size: 13px;
+  font-family: Arial, sans-serif;
+  z-index: 1000;
+  word-wrap: break-word;  /* ✅ force wrap if text is long */
+}
+
+.legend-item {
+  margin: 6px 0;
+  display: flex;
+  align-items: flex-start;  /* ✅ align color box to top */
+}
+
+.legend-color {
+  flex-shrink: 0;   /* ✅ keeps color box fixed */
+  width: 15px;
+  height: 15px;
+  margin-right: 8px;
+  border-radius: 3px;
+}
+
+.legend-text {
+  flex: 1;          /* ✅ text takes remaining width */
+  line-height: 1.3; /* ✅ improve readability */
+}
+
+
+        /* 🌟 Navbar */
+        .navbar {
+          position: absolute;
+          top: 0;
+          left: 0;
+          width: 100%;
+          background: #333;
+          color: white;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding: 10px 20px;
+          font-family: Arial, sans-serif;
+          z-index: 2000;
+        }
+        .navbar a {
+          color: white;
+          text-decoration: none;
+          margin: 0 30px;
+          font-weight: bold;
+        }
+        .navbar a:hover {
+          text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+<!-- 🌟 Navbar -->
+<div class="navbar">
+    <div class="logo">🌍 Rover Sand Classification</div>
+    <div class="nav-links">
+        <a href="links.html">Links / Reference</a>
+        <a href="visualization.html">Visualization</a>
+    </div>
+</div>
+
+<div id="map"></div>
+
+<!-- 🌟 Legend -->
+<div id="legend">
+    <div class="legend-item">
+        <div class="legend-color" style="background:red"></div>
+        <div class="legend-text">
+            Coarse (Dune region) - Dry, vegetated upper beach; has slightly coarser sand.
+        </div>
+    </div>
+    <div class="legend-item">
+        <div class="legend-color" style="background:blue"></div>
+        <div class="legend-text">
+            Medium (Berm region) - Flat, dry area between the dune and the intertidal zone; coarser sand than the intertidal zone.
+        </div>
+    </div>
+    <div class="legend-item">
+        <div class="legend-color" style="background:green"></div>
+        <div class="legend-text">
+            Fine (Intertidal zone) - Wet area exposed and submerged by tides; has finer sediment.
+        </div>
+    </div>
+</div>
+
+<!-- Leaflet JS -->
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+<!-- Firebase App (v8) -->
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+<!-- Firebase Firestore (v8) -->
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+
+<script>
+    // =========================
+    // 1️⃣ Firebase Config
+    // =========================
+    const firebaseConfig = {
+      apiKey: "AIzaSyD3CDUhwefTm_ET4g3_JcWRS_2vGaxCsg4",
+      authDomain: "sand-classifier.firebaseapp.com",
+      projectId: "sand-classifier",
+      storageBucket: "sand-classifier.firebasestorage.app",
+      messagingSenderId: "824935959428",
+      appId: "1:824935959428:web:6c7f47f58fecc8793cebd1",
+      measurementId: "G-0Q8ZG0H9EX"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+
+    // =========================
+    // 2️⃣ Leaflet Map Setup
+    // =========================
+    let map = L.map('map').setView([0, 0], 2);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '© OpenStreetMap'
+    }).addTo(map);
+
+    let bounds = L.latLngBounds();
+    const sandColors = { coarse: "red", medium: "blue", fine: "green" };
+
+    // =========================
+    // 3️⃣ Sand region tracking
+    // =========================
+    let sandRegions = { coarse: [], medium: [], fine: [] };
+    const MIN_POINTS_FOR_REGION = 2;
+    const BASE_RADIUS = 20;
+    const OFFSET_RADIUS = 10;
+
+    let lastSandType = null; // for merge rule
+
+    // =========================
+    // 4️⃣ Merge points into region
+    // =========================
+    function mergeRegion(sandType, newPoint) {
+      let regions = sandRegions[sandType];
+
+      if (lastSandType === sandType && regions.length > 0) {
+        let lastRegion = regions[regions.length - 1];
+        extendRegion(lastRegion, newPoint);
+      } else {
+        let nearest = findNearestRegion(regions, newPoint);
+        if (nearest) {
+          extendRegion(nearest, newPoint);
+        } else {
+          regions.push({
+            latSum: newPoint.lat,
+            lngSum: newPoint.lng,
+            count: 1,
+            circle: null,
+            points: [ newPoint ],
+            currentIndex: 0
+          });
+        }
+      }
+
+      sandRegions[sandType] = regions;
+      lastSandType = sandType;
+    }
+
+    function extendRegion(region, point) {
+      region.latSum += point.lat;
+      region.lngSum += point.lng;
+      region.count++;
+      region.points.push(point);
+    }
+
+    function findNearestRegion(regions, point) {
+      if (regions.length === 0) return null;
+      let nearest = null, minDist = Infinity;
+
+      for (let region of regions.slice(-2)) {
+        let center = [region.latSum / region.count, region.lngSum / region.count];
+        let dist = map.distance(center, [point.lat, point.lng]);
+        if (dist < minDist) {
+          minDist = dist;
+          nearest = region;
+        }
+      }
+      return nearest;
+    }
+
+    // =========================
+    // 5️⃣ Create slideshow HTML
+    // =========================
+    function createSlideshowHTML(region) {
+      if (!region.points || region.points.length === 0) return "No images";
+
+      let slides = region.points.map((pt, idx) => {
+        return `<div class="slide" style="display:${idx===region.currentIndex?'block':'none'}">
+                  <img src="${pt.image_url}" width="150"><br>
+                  Lat: ${pt.lat.toFixed(6)}, Lng: ${pt.lng.toFixed(6)}
+                </div>`;
+      }).join('');
+
+      return `
+        <div class="slideshow-container">
+          ${slides}
+          <div class="counter">${region.currentIndex+1} / ${region.points.length}</div>
+          <button class="prev" data-key="${ptKey(region)}" data-step="-1">&#10094;</button>
+          <button class="next" data-key="${ptKey(region)}" data-step="1">&#10095;</button>
+        </div>
+      `;
+    }
+
+    function ptKey(region) {
+      return region.points[0].lat+"_"+region.points[0].lng;
+    }
+
+    // =========================
+    // 6️⃣ Prev/Next controls
+    // =========================
+    function attachSlideshowEvents(region) {
+      let popupEl = region.circle.getPopup().getElement();
+      if (!popupEl) return;
+
+      L.DomEvent.disableClickPropagation(popupEl);
+
+      let prevBtn = popupEl.querySelector(".prev");
+      let nextBtn = popupEl.querySelector(".next");
+
+      if (prevBtn) {
+        prevBtn.onclick = (e) => {
+          e.stopPropagation();
+          plusSlides(region, -1);
+        };
+      }
+      if (nextBtn) {
+        nextBtn.onclick = (e) => {
+          e.stopPropagation();
+          plusSlides(region, 1);
+        };
+      }
+    }
+
+    function plusSlides(region, step) {
+      region.currentIndex = (region.currentIndex + step + region.points.length) % region.points.length;
+      region.circle.setPopupContent(createSlideshowHTML(region));
+      region.circle.openPopup();
+      attachSlideshowEvents(region);
+    }
+
+    // =========================
+    // 7️⃣ Refresh circles
+    // =========================
+    function refreshCircles() {
+      for (let sandType in sandRegions) {
+        sandRegions[sandType].forEach(region => {
+          if (region.count >= MIN_POINTS_FOR_REGION) {
+            let lat = region.latSum / region.count;
+            let lng = region.lngSum / region.count;
+            let radius = BASE_RADIUS + OFFSET_RADIUS * (region.count - 1);
+
+            if (region.circle) {
+              region.circle.setLatLng([lat, lng]);
+              region.circle.setRadius(radius);
+            } else {
+              region.circle = L.circle([lat, lng], {
+                radius: radius,
+                color: sandColors[sandType],
+                fillOpacity: 0.5
+              }).addTo(map)
+              .bindPopup(() => createSlideshowHTML(region), { maxWidth: 300 });
+
+              region.circle.on("popupopen", () => {
+                attachSlideshowEvents(region);
+              });
+            }
+          }
+        });
+      }
+    }
+
+    // =========================
+    // 8️⃣ Firestore listener
+    // =========================
+    db.collection("rover_data").onSnapshot(snapshot => {
+      snapshot.docChanges().forEach(change => {
+        if (change.type === "added") {
+          const data = change.doc.data();
+          let point = { lat: data.lat, lng: data.lng, image_url: data.image_url, sand_type: data.sand };
+
+          bounds.extend([point.lat, point.lng]);
+          map.fitBounds(bounds, { padding: [50, 50] });
+
+          mergeRegion(point.sand_type, point);
+          refreshCircles();
+        }
+      });
+    });
+</script>
+</body>
+</html>

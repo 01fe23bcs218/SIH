@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Sand Classifier - Links</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <style>
+        body {
+          font-family: Arial, sans-serif;
+          margin: 20px;
+          background: #f9f9f9;
+        }
+        h2 {
+          text-align: center;
+          margin-bottom: 20px;
+        }
+        .gallery {
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+          gap: 15px;
+        }
+        .card {
+          background: white;
+          border-radius: 8px;
+          box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+          overflow: hidden;
+          text-align: center;
+          transition: transform 0.2s;
+        }
+        .card:hover {
+          transform: scale(1.03);
+        }
+        .card img {
+          width: 100%;
+          height: 150px;
+          object-fit: cover;
+        }
+        .card p {
+          margin: 10px;
+          font-size: 14px;
+          color: #333;
+        }
+        .card a {
+          text-decoration: none;
+          color: #007BFF;
+          font-size: 13px;
+        }
+    </style>
+</head>
+<body>
+
+<h2>📂 Firebase Rover Data </h2>
+<div class="gallery" id="gallery"></div>
+
+<!-- Firebase App (v8) -->
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+
+<script>
+    // 🔹 Firebase Config (same as your main project)
+    const firebaseConfig = {
+      apiKey: "AIzaSyD3CDUhwefTm_ET4g3_JcWRS_2vGaxCsg4",
+      authDomain: "sand-classifier.firebaseapp.com",
+      projectId: "sand-classifier",
+      storageBucket: "sand-classifier.firebasestorage.app",
+      messagingSenderId: "824935959428",
+      appId: "1:824935959428:web:6c7f47f58fecc8793cebd1",
+      measurementId: "G-0Q8ZG0H9EX"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+
+    // 🔹 Fetch Firestore Data
+    db.collection("rover_data").get().then(snapshot => {
+      const gallery = document.getElementById("gallery");
+      snapshot.forEach(doc => {
+        const data = doc.data();
+        const card = document.createElement("div");
+        card.className = "card";
+        card.innerHTML = `
+          <a href="${data.image_url}" target="_blank">
+            <img src="${data.image_url}" alt="Sand Image">
+          </a>
+          <p><b>Sand Type:</b> ${data.sand || "N/A"}</p>
+          <p><b>Lat:</b> ${data.lat}, <b>Lng:</b> ${data.lng}</p>
+        `;
+        gallery.appendChild(card);
+      });
+    }).catch(err => {
+      console.error("Error fetching data:", err);
+    });
+</script>
+
+</body>
+</html>
